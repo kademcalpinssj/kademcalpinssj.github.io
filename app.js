@@ -18,6 +18,49 @@ const COURT_POS = [1, 2, 3, 5, 6, 7];
 const VB = { w: 1000, h: 1400 };
 const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
 
+function tryLoadSharedState() {
+  const params = new URLSearchParams(location.search);
+  const shared = params.get("s");
+  if (!shared) return false;
+
+  try {
+    const data = decodeState(shared);
+
+    state = {
+      teams: [{
+        id: uid(),
+        name: data.team.name,
+        players: data.team.players,
+        rotations: [{
+          id: uid(),
+          name: data.rotation.name,
+          positions: data.rotation.positions,
+          leftBench: data.rotation.leftBench,
+          rightBench: data.rotation.rightBench,
+          mesh: data.rotation.mesh,
+        }]
+      }],
+      currentTeamId: null,
+      currentRotationId: null,
+      ui: { editLayout: false }
+    };
+
+    state.currentTeamId = state.teams[0].id;
+    state.currentRotationId = state.teams[0].rotations[0].id;
+
+    saveState();
+
+    // Clean URL (optional but recommended)
+    history.replaceState({}, "", location.pathname);
+
+    return true;
+  } catch (e) {
+    console.error("Invalid share payload", e);
+    return false;
+  }
+}
+
+
 function initialsFor(name) {
   const parts = String(name || "").trim().split(/\s+/).filter(Boolean);
   if (!parts.length) return "?";
@@ -382,6 +425,42 @@ function normalizePlayerMembership(team, rot) {
 
   roster.forEach(pid => { if (!seen.has(pid)) rot.rightBench.unshift(pid); });
 }
+
+function getSharableState() {
+  const team = getTeam();
+  const rot = getRotation(team);
+
+  return {
+    team: {
+      name: team.name,
+      players: team.players,
+    },
+    rotation: {
+      name: rot.name,
+      positions: rot.positions,
+      leftBench: rot.leftBench,
+      rightBench: rot.rightBench,
+      mesh: rot.mesh,
+    }
+  };
+}
+
+function encodeState(obj) {
+  const json = JSON.stringify(obj);
+  const utf8 = new TextEncoder().encode(json);
+  const b64 = btoa(String.fromCharCode(...utf8));
+  return encodeURIComponent(b64);
+}
+
+function decodeState(str) {
+  const b64 = decodeURIComponent(str);
+  const binary = atob(b64);
+  const bytes = Uint8Array.from(binary, c => c.charCodeAt(0));
+  const json = new TextDecoder().decode(bytes);
+  return JSON.parse(json);
+}
+
+
 
 // --------- Rotation logic ---------
 function rotateClockwise(rot) {
@@ -798,6 +877,10 @@ function renderCourtTokens(team, rot) {
 }
 
 // --------- Rendering ---------
+
+tryLoadSharedState();
+render();
+
 function render() {
   ensureValidSelection();
 
@@ -1067,31 +1150,32 @@ chkEditLayout?.addEventListener("change", () => {
 
 // export
 btnShare?.addEventListener("click", async () => {
-  setStatus("Rendering…");
   try {
-    const canvas = await html2canvas(playArea, { backgroundColor: null, scale: 2, useCORS: true });
-    const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/png"));
-    const file = new File([blob], "lineup.png", { type: "image/png" });
+    const payload = getSharableState();
+    const encoded = encodeState(payload);
 
-    if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      await navigator.share({ title: "Volleyball Lineup", files: [file] });
-      setStatus("Shared");
-      return;
+    const url = `${location.origin}${location.pathname}?s=${encoded}`;
+
+    // Copy to clipboard (most reliable)
+    await navigator.clipboard.writeText(url);
+    setStatus("Share link copied");
+
+    // Try native share IF available (bonus)
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: "Volleyball Lineup",
+          text: "View this lineup",
+          url
+        });
+      } catch {}
     }
-
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "lineup.png";
-    a.click();
-    URL.revokeObjectURL(url);
-    setStatus("Downloaded");
   } catch (e) {
     console.error(e);
-    alert("Export failed. Try hosting the app (not file://) and using Safari/Chrome.");
-    setStatus("Export failed");
+    alert("Unable to generate share link.");
   }
 });
+
 
 // init
 saveState();
