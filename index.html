@@ -4,35 +4,49 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>Kade's Volleyball Lineup Helper</title>
+
   <link rel="stylesheet" href="style.css" />
   <meta name="theme-color" content="#0b1220" />
+
+  <!-- iOS "Add to Home Screen" -->
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 </head>
 <body>
-  <div class="app">
+  <div class="app" id="appRoot">
     <header class="topbar">
       <div class="brand">
-        <div class="logo">🏐</div>
+        <button class="iconBtn ghost mobileOnly" id="btnTogglePanel" aria-label="Open menu" title="Menu">☰</button>
+        <div class="logo" aria-hidden="true">🏐</div>
         <div class="brandText">
-          <div class="title">Kade's Volleyball Lineup Helper</div>
+          <div class="title">Volleyball Lineup</div>
           <div class="subtitle" id="subtitle">Drag • Drop • Rotate</div>
         </div>
       </div>
 
       <div class="topActions">
-        <button class="btn ghost" id="btnShare" title="Export image">Share</button>
+        <button class="btn ghost" id="btnShare" title="Share lineup">Share</button>
         <button class="btn" id="btnNewTeam" title="Add a team">+ Team</button>
       </div>
     </header>
 
+    <!-- Mobile drawer backdrop -->
+    <div class="panelBackdrop" id="panelBackdrop" hidden></div>
+
     <main class="main">
-      <aside class="panel">
+      <aside class="panel" id="sidePanel" aria-label="Controls">
+        <div class="panelTop mobileOnly">
+          <div class="panelTopTitle">Menu</div>
+          <button class="iconBtn ghost" id="btnClosePanel" aria-label="Close menu" title="Close">✕</button>
+        </div>
+
         <section class="card">
           <div class="row between">
             <div>
               <div class="label">Team</div>
               <select id="teamSelect" class="select"></select>
             </div>
-            <button class="iconBtn danger" id="btnDeleteTeam" title="Delete team">🗑️</button>
+            <button class="iconBtn danger" id="btnDeleteTeam" title="Delete team" aria-label="Delete team">🗑️</button>
           </div>
 
           <div class="row">
@@ -44,10 +58,10 @@
         <section class="card">
           <div class="row between">
             <div class="label">Rotations</div>
-            <div class="row">
+            <div class="row" style="margin-top:0;">
               <button class="btn small" id="btnNewRotation">+ Rotation</button>
-              <button class="btn ghost" id="btnRotateCCW">⟲ Rotate</button>
-              <button class="btn" id="btnRotateCW">Rotate ⟳</button>
+              <button class="btn ghost" id="btnRotateCCW" title="Rotate counter-clockwise">⟲</button>
+              <button class="btn" id="btnRotateCW" title="Rotate clockwise">⟳</button>
             </div>
           </div>
 
@@ -75,7 +89,7 @@
 
           <div class="help">
             Drag players into court zones. Dropping onto an occupied zone swaps.
-            Benches are outside the court and are FIFO queues.
+            Benches are FIFO queues.
           </div>
 
           <div class="playersGrid wide" id="playersGrid"></div>
@@ -96,7 +110,7 @@
 
         <section class="card soft">
           <div class="help">
-            Tip: On iPhone, open this in Safari → Share → <b>Add to Home Screen</b>.
+            Tip: iPhone Safari → Share → <b>Add to Home Screen</b>.
           </div>
         </section>
       </aside>
@@ -106,9 +120,12 @@
           <div class="canvasTitle">
             <div class="pill" id="pillTeam">Team</div>
             <div class="pill" id="pillRotation">Rotation</div>
-            <button class="btn" id="btnRotateCW2">Rotate ⟳</button>
           </div>
-          <div class="muted" id="status">Saved</div>
+
+          <div class="canvasHeaderRight">
+            <button type="button" class="btn" id="btnRotateCW2" title="Rotate clockwise">Rotate ⟳</button>
+            <div class="muted" id="status">Saved</div>
+          </div>
         </div>
 
         <div class="playArea" id="playArea">
@@ -126,7 +143,6 @@
 
           <div class="courtWrap" id="courtWrap">
             <div class="court" id="court" aria-label="Volleyball half-court">
-              <!-- Court lines -->
               <div class="line net"></div>
               <div class="line attack"></div>
               <div class="line sideline left"></div>
@@ -134,11 +150,9 @@
               <div class="line baseline"></div>
               <div class="line center"></div>
 
-              <!-- Labels -->
               <div class="zoneLabel back">Backcourt</div>
               <div class="zoneLabel front">Frontcourt</div>
 
-              <!-- NEW: SVG zone overlay + token layer -->
               <svg id="zoneSvg" class="zoneSvg" viewBox="0 0 1000 1400" preserveAspectRatio="none" aria-hidden="true"></svg>
               <div id="courtTokens" class="courtTokens" aria-hidden="true"></div>
             </div>
@@ -156,16 +170,23 @@
             </div>
           </div>
         </div>
+
+        <!-- Mobile sticky action bar -->
+        <div class="mobileBar">
+          <button class="btn ghost" id="btnMobileMenu">Menu</button>
+          <button class="btn" id="btnMobileRotate">Rotate ⟳</button>
+          <button class="btn ghost" id="btnMobileShare">Share</button>
+        </div>
       </section>
     </main>
   </div>
 
-  <!-- Name edit modal -->
+  <!-- Edit player modal -->
   <div class="modalBackdrop" id="modalBackdrop" hidden>
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
       <div class="modalHead">
         <div class="modalTitle" id="modalTitle">Edit Player</div>
-        <button class="iconBtn" id="btnCloseModal" title="Close">✕</button>
+        <button class="iconBtn ghost" id="btnCloseModal" title="Close">✕</button>
       </div>
       <div class="modalBody">
         <label class="label">Player name</label>
@@ -178,8 +199,41 @@
     </div>
   </div>
 
+  <!-- Share modal -->
+  <div class="modalBackdrop" id="shareBackdrop" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="shareTitle">
+      <div class="modalHead">
+        <div class="modalTitle" id="shareTitle">Share lineup</div>
+        <button class="iconBtn ghost" id="btnCloseShare" title="Close">✕</button>
+      </div>
+
+      <div class="modalBody">
+        <div class="help" style="margin-bottom:10px;">
+          Share a short link (compressed), export an image, or copy a readable text lineup.
+        </div>
+
+        <div class="shareGrid">
+          <button class="btn" id="btnCopyShareLink">Copy link</button>
+          <button class="btn ghost" id="btnNativeShare">Share…</button>
+          <button class="btn ghost" id="btnShareImage">Share as image</button>
+          <button class="btn ghost" id="btnCopyShareText">Copy text</button>
+        </div>
+
+        <div class="sharePreview" id="sharePreview" aria-live="polite"></div>
+
+        <div class="row gap">
+          <button class="btn ghost" id="btnCloseShare2">Done</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- html2canvas for export -->
   <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+
+  <!-- LZ-String for compact, URL-safe compression -->
+  <script src="https://cdn.jsdelivr.net/npm/lz-string@1.5.0/libs/lz-string.min.js"></script>
+
   <script src="app.js"></script>
 </body>
 </html>

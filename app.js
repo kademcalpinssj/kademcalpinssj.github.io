@@ -1,5 +1,5 @@
 // Volleyball Lineup App (6 quad zones, shared mesh; each zone = 4 vertices)
-const STORAGE_KEY = "volley_lineup_v10";
+const STORAGE_KEY = "volley_lineup_v11";
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2) + Date.now());
 
 const POS = {
@@ -18,9 +18,22 @@ const COURT_POS = [1, 2, 3, 5, 6, 7];
 const VB = { w: 1000, h: 1400 };
 const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
 
+/**
+ * Sharing
+ * - Compress state with LZString.compressToEncodedURIComponent => short URL payload.
+ * - Accept both:
+ *   - ?s=<payload>
+ *   - #s=<payload>   (hash doesn't hit server logs & is a little nicer on GH pages)
+ */
 function tryLoadSharedState() {
   const params = new URLSearchParams(location.search);
-  const shared = params.get("s");
+  const queryShared = params.get("s");
+
+  const hash = (location.hash || "").replace(/^#/, "");
+  const hashParams = new URLSearchParams(hash);
+  const hashShared = hashParams.get("s");
+
+  const shared = hashShared || queryShared;
   if (!shared) return false;
 
   try {
@@ -50,7 +63,7 @@ function tryLoadSharedState() {
 
     saveState();
 
-    // Clean URL (optional but recommended)
+    // Clean the URL
     history.replaceState({}, "", location.pathname);
 
     return true;
@@ -59,7 +72,6 @@ function tryLoadSharedState() {
     return false;
   }
 }
-
 
 function initialsFor(name) {
   const parts = String(name || "").trim().split(/\s+/).filter(Boolean);
@@ -76,79 +88,59 @@ function tokenLabelFor(name) {
 
 // ------------------------------------------------------------
 // QUAD SHARED MESH
-// - exactly 6 zones, each 4 vertices
-// - uses 2 vertical seams (each defined by top+bottom points)
-// - uses 1 horizontal seam (front/back) defined by left+right points
-// - intersection points are derived (computed) so we don't add vertices
 // ------------------------------------------------------------
 function defaultMesh() {
   return {
     pts: {
-      // locked corners (for convenience)
       TL: { x: 60, y: 220 },
       TR: { x: 940, y: 220 },
       BL: { x: 60, y: 1340 },
       BR: { x: 940, y: 1340 },
-
-      // Seam 1 endpoints (left/middle boundary)
-      S1T: { x: 360, y: 220 },   // on top edge
-      S1B: { x: 360, y: 1340 },  // on bottom edge
-
-      // Seam 2 endpoints (middle/right boundary)
-      S2T: { x: 640, y: 220 },   // on top edge
-      S2B: { x: 640, y: 1340 },  // on bottom edge
-
-      // Horizontal seam endpoints (front/back boundary) — on sidelines
-      HL: { x: 60, y: 760 },     // left edge
-      HR: { x: 940, y: 760 },    // right edge
+      S1T: { x: 360, y: 220 },
+      S1B: { x: 360, y: 1340 },
+      S2T: { x: 640, y: 220 },
+      S2B: { x: 640, y: 1340 },
+      HL: { x: 60, y: 760 },
+      HR: { x: 940, y: 760 },
     },
   };
 }
 
 function clampMesh(mesh) {
   const P = mesh.pts;
-
   const L = 60, R = 940, T = 220, B = 1340;
 
-  // clamp everything
   for (const k of Object.keys(P)) {
     P[k].x = clamp(P[k].x, 0, VB.w);
     P[k].y = clamp(P[k].y, 0, VB.h);
   }
 
-  // lock corners
   P.TL.x = L; P.TL.y = T;
   P.TR.x = R; P.TR.y = T;
   P.BL.x = L; P.BL.y = B;
   P.BR.x = R; P.BR.y = B;
 
-  // force seam endpoints on top/bottom edges
   P.S1T.y = T;
   P.S2T.y = T;
   P.S1B.y = B;
   P.S2B.y = B;
 
-  // force horizontal seam endpoints on sidelines
   P.HL.x = L;
   P.HR.x = R;
 
-  // keep horizontal seam level (single y across)
   P.HL.y = clamp(P.HL.y, T + 220, B - 220);
   P.HR.y = P.HL.y;
 
-  // keep seam ordering and reasonable spacing
   const minGap = 90;
-  // top
   P.S1T.x = clamp(P.S1T.x, L + 180, P.S2T.x - minGap);
   P.S2T.x = clamp(P.S2T.x, P.S1T.x + minGap, R - 180);
-  // bottom
+
   P.S1B.x = clamp(P.S1B.x, L + 180, P.S2B.x - minGap);
   P.S2B.x = clamp(P.S2B.x, P.S1B.x + minGap, R - 180);
 
   return mesh;
 }
 
-// line intersection (infinite lines) of segment AB with segment CD
 function lineIntersection(A, B, C, D) {
   const x1 = A.x, y1 = A.y;
   const x2 = B.x, y2 = B.y;
@@ -170,53 +162,36 @@ function derivedIntersections(mesh) {
   const P = mesh.pts;
   const L = 60, R = 940;
 
-  // Horizontal seam line
   const H1 = P.HL;
   const H2 = P.HR;
 
-  // Intersection of seam1 with horizontal seam
   let I1 = lineIntersection(P.S1T, P.S1B, H1, H2);
-  // Intersection of seam2 with horizontal seam
   let I2 = lineIntersection(P.S2T, P.S2B, H1, H2);
 
-  // Fallbacks (shouldn't happen unless seams go parallel to H, which is rare)
   if (!I1) I1 = { x: (P.S1T.x + P.S1B.x) / 2, y: P.HL.y };
   if (!I2) I2 = { x: (P.S2T.x + P.S2B.x) / 2, y: P.HL.y };
 
-  // clamp intersections to court width
   I1.x = clamp(I1.x, L, R);
   I2.x = clamp(I2.x, L, R);
 
-  // keep ordering so the middle quad doesn't flip
   const minGap = 40;
   if (I2.x < I1.x + minGap) I2.x = I1.x + minGap;
 
   return { I1, I2 };
 }
 
-// Return 4 vertices for a given court pos
 function quadForPos(mesh, pos) {
   const P = mesh.pts;
   const { I1, I2 } = derivedIntersections(mesh);
 
   switch (pos) {
-    // Front row quads
-    case 1: // Front Left: TL -> S1T -> I1 -> HL
-      return [P.TL, P.S1T, I1, P.HL];
-    case 2: // Front Middle: S1T -> S2T -> I2 -> I1
-      return [P.S1T, P.S2T, I2, I1];
-    case 3: // Front Right: S2T -> TR -> HR -> I2
-      return [P.S2T, P.TR, P.HR, I2];
-
-    // Back row quads
-    case 7: // Back Left: HL -> I1 -> S1B -> BL
-      return [P.HL, I1, P.S1B, P.BL];
-    case 6: // Back Middle: I1 -> I2 -> S2B -> S1B
-      return [I1, I2, P.S2B, P.S1B];
-    case 5: // Back Right: I2 -> HR -> BR -> S2B
-      return [I2, P.HR, P.BR, P.S2B];
-    default:
-      return [];
+    case 1: return [P.TL, P.S1T, I1, P.HL];
+    case 2: return [P.S1T, P.S2T, I2, I1];
+    case 3: return [P.S2T, P.TR, P.HR, I2];
+    case 7: return [P.HL, I1, P.S1B, P.BL];
+    case 6: return [I1, I2, P.S2B, P.S1B];
+    case 5: return [I2, P.HR, P.BR, P.S2B];
+    default: return [];
   }
 }
 
@@ -316,13 +291,16 @@ function setStatus(text) {
   el.textContent = text;
   el.style.opacity = "1";
   clearTimeout(setStatus._t);
-  setStatus._t = setTimeout(() => (el.style.opacity = "0.65"), 900);
+  setStatus._t = setTimeout(() => (el.style.opacity = "0.7"), 900);
 }
 
 // --------- DOM refs ---------
+const appRoot = document.getElementById("appRoot");
+
 const playArea = document.getElementById("playArea");
 const zoneSvg = document.getElementById("zoneSvg");
 const courtTokens = document.getElementById("courtTokens");
+const courtWrap = document.getElementById("courtWrap");
 
 const leftBenchPanel = document.getElementById("leftBenchPanel");
 const rightBenchPanel = document.getElementById("rightBenchPanel");
@@ -356,13 +334,34 @@ const pillRotation = document.getElementById("pillRotation");
 const btnShare = document.getElementById("btnShare");
 const chkEditLayout = document.getElementById("chkEditLayout");
 
-// Modal
+// Mobile drawer
+const sidePanel = document.getElementById("sidePanel");
+const panelBackdrop = document.getElementById("panelBackdrop");
+const btnTogglePanel = document.getElementById("btnTogglePanel");
+const btnClosePanel = document.getElementById("btnClosePanel");
+
+// Mobile action bar
+const btnMobileMenu = document.getElementById("btnMobileMenu");
+const btnMobileRotate = document.getElementById("btnMobileRotate");
+const btnMobileShare = document.getElementById("btnMobileShare");
+
+// Player modal
 const modalBackdrop = document.getElementById("modalBackdrop");
 const btnCloseModal = document.getElementById("btnCloseModal");
 const btnCancelModal = document.getElementById("btnCancelModal");
 const btnSavePlayerName = document.getElementById("btnSavePlayerName");
 const playerNameInput = document.getElementById("playerNameInput");
 let modalPlayerId = null;
+
+// Share modal
+const shareBackdrop = document.getElementById("shareBackdrop");
+const btnCloseShare = document.getElementById("btnCloseShare");
+const btnCloseShare2 = document.getElementById("btnCloseShare2");
+const btnCopyShareLink = document.getElementById("btnCopyShareLink");
+const btnNativeShare = document.getElementById("btnNativeShare");
+const btnShareImage = document.getElementById("btnShareImage");
+const btnCopyShareText = document.getElementById("btnCopyShareText");
+const sharePreview = document.getElementById("sharePreview");
 
 // --------- Helpers ---------
 function getTeam() {
@@ -446,22 +445,54 @@ function getSharableState() {
   };
 }
 
+// ---- Share encoding (compressed + URL-safe) ----
+// Requires LZString loaded in index.html
 function encodeState(obj) {
   const json = JSON.stringify(obj);
-  const utf8 = new TextEncoder().encode(json);
-  const b64 = btoa(String.fromCharCode(...utf8));
-  return encodeURIComponent(b64);
+  // compressToEncodedURIComponent is URL-safe and much shorter than base64 JSON
+  return LZString.compressToEncodedURIComponent(json);
 }
-
 function decodeState(str) {
-  const b64 = decodeURIComponent(str);
-  const binary = atob(b64);
-  const bytes = Uint8Array.from(binary, c => c.charCodeAt(0));
-  const json = new TextDecoder().decode(bytes);
+  const json = LZString.decompressFromEncodedURIComponent(str);
+  if (!json) throw new Error("Unable to decompress share payload");
   return JSON.parse(json);
 }
 
+function buildShareUrl() {
+  const payload = getSharableState();
+  const encoded = encodeState(payload);
+  // Prefer hash share (cleaner on GH Pages, no querystring persistence)
+  return `${location.origin}${location.pathname}#s=${encoded}`;
+}
 
+function buildShareText() {
+  const team = getTeam();
+  const rot = getRotation(team);
+
+  const nameFor = (pid) => {
+    const p = findPlayer(team, pid);
+    return p ? `${p.number}. ${p.name}` : "(empty)";
+  };
+
+  const lines = [];
+  lines.push(`🏐 ${team.name} — ${rot.name}`);
+  lines.push("");
+  lines.push("ON COURT");
+  lines.push(`1 Front Left: ${rot.positions["1"] ? nameFor(rot.positions["1"]) : "(empty)"}`);
+  lines.push(`2 Front Middle (Setter): ${rot.positions["2"] ? nameFor(rot.positions["2"]) : "(empty)"}`);
+  lines.push(`3 Front Right: ${rot.positions["3"] ? nameFor(rot.positions["3"]) : "(empty)"}`);
+  lines.push(`5 Back Right: ${rot.positions["5"] ? nameFor(rot.positions["5"]) : "(empty)"}`);
+  lines.push(`6 Back Middle: ${rot.positions["6"] ? nameFor(rot.positions["6"]) : "(empty)"}`);
+  lines.push(`7 Back Left: ${rot.positions["7"] ? nameFor(rot.positions["7"]) : "(empty)"}`);
+  lines.push("");
+  lines.push("LEFT BENCH (Front → Back)");
+  lines.push(rot.leftBench.length ? rot.leftBench.map(pid => `• ${nameFor(pid)}`).join("\n") : "• (none)");
+  lines.push("");
+  lines.push("RIGHT BENCH (Front → Back)");
+  lines.push(rot.rightBench.length ? rot.rightBench.map(pid => `• ${nameFor(pid)}`).join("\n") : "• (none)");
+
+  return lines.join("\n");
+}
 
 // --------- Rotation logic ---------
 function rotateClockwise(rot) {
@@ -510,7 +541,7 @@ function rotateCounterClockwise(rot) {
   if (p5) rot.rightBench.push(p5);
 }
 
-// --------- Modal ---------
+// --------- Player Modal ---------
 function openPlayerModal(playerId) {
   const team = getTeam();
   const player = findPlayer(team, playerId);
@@ -650,6 +681,7 @@ function makePlayerToken(team, rot, pid) {
   token.addEventListener("pointerdown", (e) => {
     if (state.ui.editLayout) return;
     if (modalBackdrop && modalBackdrop.hidden === false) return;
+    if (shareBackdrop && shareBackdrop.hidden === false) return;
 
     const loc = locatePlayer(rot, pid);
     if (!loc) return;
@@ -878,7 +910,6 @@ function renderCourtTokens(team, rot) {
 }
 
 // --------- Rendering ---------
-
 tryLoadSharedState();
 render();
 
@@ -912,6 +943,7 @@ function render() {
       state.currentRotationId = r.id;
       saveState();
       render();
+      closeDrawerIfMobile();
     });
 
     const left = document.createElement("div");
@@ -1006,7 +1038,133 @@ function render() {
 
     playersGrid.appendChild(row);
   });
+
+  // Update share preview if share modal is open
+  if (shareBackdrop && shareBackdrop.hidden === false) {
+    sharePreview.textContent = buildShareText();
+  }
 }
+
+// --------- Mobile drawer wiring ---------
+function openDrawer() {
+  if (!sidePanel || !panelBackdrop) return;
+  sidePanel.classList.add("drawerOpen");
+  panelBackdrop.hidden = false;
+  document.body.style.overflow = "hidden";
+}
+function closeDrawer() {
+  if (!sidePanel || !panelBackdrop) return;
+  sidePanel.classList.remove("drawerOpen");
+  panelBackdrop.hidden = true;
+  document.body.style.overflow = "";
+}
+function closeDrawerIfMobile() {
+  if (window.matchMedia("(max-width: 980px)").matches) closeDrawer();
+}
+
+btnTogglePanel?.addEventListener("click", openDrawer);
+btnClosePanel?.addEventListener("click", closeDrawer);
+panelBackdrop?.addEventListener("click", closeDrawer);
+
+btnMobileMenu?.addEventListener("click", openDrawer);
+
+// --------- Share modal wiring ---------
+function openShare() {
+  shareBackdrop.hidden = false;
+  sharePreview.textContent = buildShareText();
+}
+function closeShare() {
+  shareBackdrop.hidden = true;
+}
+btnCloseShare?.addEventListener("click", (e) => { e.stopPropagation(); closeShare(); });
+btnCloseShare2?.addEventListener("click", (e) => { e.stopPropagation(); closeShare(); });
+shareBackdrop?.addEventListener("click", (e) => { if (e.target === shareBackdrop) closeShare(); });
+
+btnShare?.addEventListener("click", openShare);
+btnMobileShare?.addEventListener("click", openShare);
+
+btnCopyShareLink?.addEventListener("click", async () => {
+  try {
+    const url = buildShareUrl();
+    await navigator.clipboard.writeText(url);
+    setStatus("Share link copied");
+  } catch (e) {
+    console.error(e);
+    alert("Unable to copy share link.");
+  }
+});
+
+btnNativeShare?.addEventListener("click", async () => {
+  const url = buildShareUrl();
+  const text = "View this lineup";
+  try {
+    if (!navigator.share) {
+      await navigator.clipboard.writeText(url);
+      setStatus("Copied (no Share sheet)");
+      return;
+    }
+    await navigator.share({ title: "Volleyball Lineup", text, url });
+    setStatus("Shared");
+  } catch {
+    // user cancelled -> ignore
+  }
+});
+
+btnCopyShareText?.addEventListener("click", async () => {
+  try {
+    const txt = buildShareText();
+    await navigator.clipboard.writeText(txt);
+    setStatus("Lineup text copied");
+  } catch (e) {
+    console.error(e);
+    alert("Unable to copy lineup text.");
+  }
+});
+
+btnShareImage?.addEventListener("click", async () => {
+  try {
+    // Capture court area + benches (playArea) so it feels like a "lineup card"
+    const el = playArea || courtWrap;
+    if (!el) throw new Error("Missing capture target");
+
+    setStatus("Rendering image…");
+    const canvas = await html2canvas(el, {
+      backgroundColor: null,
+      scale: Math.min(2, window.devicePixelRatio || 1.5),
+      useCORS: true,
+    });
+
+    // Convert to blob
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png", 1.0));
+    if (!blob) throw new Error("Image blob failed");
+
+    const file = new File([blob], "volleyball-lineup.png", { type: "image/png" });
+
+    // Try native share with file
+    if (navigator.canShare && navigator.canShare({ files: [file] }) && navigator.share) {
+      await navigator.share({
+        title: "Volleyball Lineup",
+        text: "Lineup image",
+        files: [file],
+      });
+      setStatus("Shared image");
+      return;
+    }
+
+    // Fallback: download
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "volleyball-lineup.png";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setStatus("Downloaded image");
+  } catch (e) {
+    console.error(e);
+    alert("Unable to export image.");
+    setStatus("Saved");
+  }
+});
 
 // --------- UI wiring ---------
 teamSelect?.addEventListener("change", () => {
@@ -1015,6 +1173,7 @@ teamSelect?.addEventListener("change", () => {
   state.currentRotationId = team.rotations[0]?.id || null;
   saveState();
   render();
+  closeDrawerIfMobile();
 });
 
 btnSaveTeam?.addEventListener("click", () => {
@@ -1033,6 +1192,7 @@ btnNewTeam?.addEventListener("click", () => {
   state.currentRotationId = t.rotations[0].id;
   saveState();
   render();
+  closeDrawerIfMobile();
 });
 
 btnDeleteTeam?.addEventListener("click", () => {
@@ -1073,6 +1233,7 @@ btnNewRotation?.addEventListener("click", () => {
   state.currentRotationId = r.id;
   saveState();
   render();
+  closeDrawerIfMobile();
 });
 
 btnSaveRotation?.addEventListener("click", () => {
@@ -1102,6 +1263,7 @@ btnCloneRotation?.addEventListener("click", () => {
 
   saveState();
   render();
+  closeDrawerIfMobile();
 });
 
 btnDeleteRotation?.addEventListener("click", () => {
@@ -1117,31 +1279,51 @@ btnDeleteRotation?.addEventListener("click", () => {
   render();
 });
 
-btnRotateCW2?.addEventListener("click", () => {
+function doRotateCW() {
+  ensureValidSelection();
   const team = getTeam();
+  if (!team) { setStatus("No team selected"); return; }
+
   const rot = getRotation(team);
+  if (!rot) { setStatus("No rotation selected"); return; }
+
   rotateClockwise(rot);
   normalizePlayerMembership(team, rot);
   saveState();
   render();
-});
+}
 
-btnRotateCW?.addEventListener("click", () => {
+function doRotateCCW() {
+  ensureValidSelection();
   const team = getTeam();
-  const rot = getRotation(team);
-  rotateClockwise(rot);
-  normalizePlayerMembership(team, rot);
-  saveState();
-  render();
-});
+  if (!team) { setStatus("No team selected"); return; }
 
-btnRotateCCW?.addEventListener("click", () => {
-  const team = getTeam();
   const rot = getRotation(team);
+  if (!rot) { setStatus("No rotation selected"); return; }
+
   rotateCounterClockwise(rot);
   normalizePlayerMembership(team, rot);
   saveState();
   render();
+}
+
+
+btnRotateCW2?.addEventListener("click", doRotateCW);
+btnRotateCW?.addEventListener("click", doRotateCW);
+btnRotateCCW?.addEventListener("click", doRotateCCW);
+btnMobileRotate?.addEventListener("click", doRotateCW);
+
+btnRotateCW2?.addEventListener("pointerup", (e) => {
+  e.preventDefault();
+  doRotateCW();
+});
+
+
+// Fallback
+document.addEventListener("click", (e) => {
+  const el = e.target?.closest?.("#btnRotateCW2");
+  if (!el) return;
+  doRotateCW();
 });
 
 btnResetLayout?.addEventListener("click", () => {
@@ -1157,35 +1339,6 @@ chkEditLayout?.addEventListener("change", () => {
   saveState();
   render();
 });
-
-// export
-btnShare?.addEventListener("click", async () => {
-  try {
-    const payload = getSharableState();
-    const encoded = encodeState(payload);
-
-    const url = `${location.origin}${location.pathname}?s=${encoded}`;
-
-    // Copy to clipboard (most reliable)
-    await navigator.clipboard.writeText(url);
-    setStatus("Share link copied");
-
-    // Try native share IF available (bonus)
-    if (navigator.share) {
-      try {
-        await navigator.share({
-          title: "Volleyball Lineup",
-          text: "View this lineup",
-          url
-        });
-      } catch {}
-    }
-  } catch (e) {
-    console.error(e);
-    alert("Unable to generate share link.");
-  }
-});
-
 
 // init
 saveState();
