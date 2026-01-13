@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Kade's Volleyball Lineup Helper</title>
+  <link rel="stylesheet" href="style.css" />
+  <meta name="theme-color" content="#0b1220" />
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <div class="logo">🏐</div>
+        <div class="brandText">
+          <div class="title">Kade's Volleyball Lineup Helper</div>
+          <div class="subtitle" id="subtitle">Drag • Drop • Rotate</div>
+        </div>
+      </div>
+
+      <div class="topActions">
+        <button class="btn ghost" id="btnShare" title="Export image">Share</button>
+        <button class="btn" id="btnNewTeam" title="Add a team">+ Team</button>
+      </div>
+    </header>
+
+    <main class="main">
+      <aside class="panel">
+        <section class="card">
+          <div class="row between">
+            <div>
+              <div class="label">Team</div>
+              <select id="teamSelect" class="select"></select>
+            </div>
+            <button class="iconBtn danger" id="btnDeleteTeam" title="Delete team">🗑️</button>
+          </div>
+
+          <div class="row">
+            <input id="teamName" class="input" placeholder="Team name" />
+            <button class="btn" id="btnSaveTeam">Rename</button>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="row between">
+            <div class="label">Rotations</div>
+            <div class="row">
+              <button class="btn small" id="btnNewRotation">+ Rotation</button>
+              <button class="btn ghost" id="btnRotateCCW">⟲ Rotate</button>
+              <button class="btn" id="btnRotateCW">Rotate ⟳</button>
+            </div>
+          </div>
+
+          <div class="rotList" id="rotList"></div>
+
+          <div class="row">
+            <input id="rotationName" class="input" placeholder="Rotation name" />
+            <button class="btn" id="btnSaveRotation">Rename</button>
+          </div>
+
+          <div class="row">
+            <button class="btn ghost" id="btnCloneRotation">Clone</button>
+            <button class="btn ghost danger" id="btnDeleteRotation">Delete</button>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="row between">
+            <div class="label">Players</div>
+            <div class="row" style="margin-top:0;">
+              <button class="btn ghost small" id="btnAddPlayer">+ Player</button>
+              <button class="btn ghost small" id="btnResetLayout">Reset layout</button>
+            </div>
+          </div>
+
+          <div class="help">
+            Drag players into court zones. Dropping onto an occupied zone swaps.
+            Benches are outside the court and are FIFO queues.
+          </div>
+
+          <div class="playersGrid wide" id="playersGrid"></div>
+        </section>
+
+        <section class="card">
+          <div class="row between">
+            <div class="label">Court Zones</div>
+            <label class="toggle">
+              <input type="checkbox" id="chkEditLayout" />
+              <span>Edit layout</span>
+            </label>
+          </div>
+          <div class="help" style="margin-top:8px;">
+            Edit layout: drag the blue points to reshape zones. The 6 zones always cover 100% of the court.
+          </div>
+        </section>
+
+        <section class="card soft">
+          <div class="help">
+            Tip: On iPhone, open this in Safari → Share → <b>Add to Home Screen</b>.
+          </div>
+        </section>
+      </aside>
+
+      <section class="canvasWrap">
+        <div class="canvasHeader">
+          <div class="canvasTitle">
+            <div class="pill" id="pillTeam">Team</div>
+            <div class="pill" id="pillRotation">Rotation</div>
+          </div>
+          <div class="muted" id="status">Saved</div>
+        </div>
+
+        <div class="playArea" id="playArea">
+          <div class="benchPanel" id="leftBenchPanel" data-bench="left" aria-label="Left Bench">
+            <div class="benchHead">
+              <div class="benchTitle"><span class="zoneTag">8</span> Left Bench</div>
+              <div class="benchSub">Front → Back</div>
+            </div>
+            <div class="benchBody">
+              <div class="benchMarker">FRONT</div>
+              <div class="benchList" id="leftBenchList"></div>
+              <div class="benchMarker">BACK</div>
+            </div>
+          </div>
+
+          <div class="courtWrap" id="courtWrap">
+            <div class="court" id="court" aria-label="Volleyball half-court">
+              <!-- Court lines -->
+              <div class="line net"></div>
+              <div class="line attack"></div>
+              <div class="line sideline left"></div>
+              <div class="line sideline right"></div>
+              <div class="line baseline"></div>
+              <div class="line center"></div>
+
+              <!-- Labels -->
+              <div class="zoneLabel back">Backcourt</div>
+              <div class="zoneLabel front">Frontcourt</div>
+
+              <!-- NEW: SVG zone overlay + token layer -->
+              <svg id="zoneSvg" class="zoneSvg" viewBox="0 0 1000 1400" preserveAspectRatio="none" aria-hidden="true"></svg>
+              <div id="courtTokens" class="courtTokens" aria-hidden="true"></div>
+            </div>
+          </div>
+
+          <div class="benchPanel" id="rightBenchPanel" data-bench="right" aria-label="Right Bench">
+            <div class="benchHead">
+              <div class="benchTitle"><span class="zoneTag">4</span> Right Bench</div>
+              <div class="benchSub">Front → Back</div>
+            </div>
+            <div class="benchBody">
+              <div class="benchMarker">FRONT</div>
+              <div class="benchList" id="rightBenchList"></div>
+              <div class="benchMarker">BACK</div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Name edit modal -->
+  <div class="modalBackdrop" id="modalBackdrop" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <div class="modalHead">
+        <div class="modalTitle" id="modalTitle">Edit Player</div>
+        <button class="iconBtn" id="btnCloseModal" title="Close">✕</button>
+      </div>
+      <div class="modalBody">
+        <label class="label">Player name</label>
+        <input class="input" id="playerNameInput" placeholder="e.g., Kade" />
+        <div class="row gap">
+          <button class="btn ghost" id="btnCancelModal">Cancel</button>
+          <button class="btn" id="btnSavePlayerName">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- html2canvas for export -->
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
