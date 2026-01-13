@@ -347,6 +347,7 @@ const btnAddPlayer = document.getElementById("btnAddPlayer");
 const btnResetLayout = document.getElementById("btnResetLayout");
 
 const btnRotateCW = document.getElementById("btnRotateCW");
+const btnRotateCW2 = document.getElementById("btnRotateCW2");
 const btnRotateCCW = document.getElementById("btnRotateCCW");
 
 const pillTeam = document.getElementById("pillTeam");
@@ -1112,6 +1113,15 @@ btnDeleteRotation?.addEventListener("click", () => {
   if (!team.rotations.length) team.rotations = [makeNewRotation("Rotation 1", team.players)];
 
   state.currentRotationId = team.rotations[0].id;
+  saveState();
+  render();
+});
+
+btnRotateCW2?.addEventListener("click", () => {
+  const team = getTeam();
+  const rot = getRotation(team);
+  rotateClockwise(rot);
+  normalizePlayerMembership(team, rot);
   saveState();
   render();
 });
